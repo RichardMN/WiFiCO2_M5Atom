@@ -13,6 +13,7 @@
 #include <WiFiClient.h>
 #include "WebServer.h"
 #include <Preferences.h>
+#include <cppQueue.h>
 #include <ezTime.h>
 
 #if defined(ARDUINO_ARCH_ESP32)
@@ -28,15 +29,34 @@ SoftwareSerial mhzSerial;
 
 ErriezMHZ19B mhz19b(&mhzSerial);
 
+const uint32_t maxCO2_queue_len = 5760;
+const uint32_t reading_interval_seconds = 30;
+// const uint32_t readings_in_day = 24*60*60/reading_interval_seconds;
+const uint32_t readings_in_day = 120; // fake out to scale graph
+
+typedef struct strCO2_reading {
+  time_t time;
+  uint16_t ppm;
+} CO2_reading;
+
+
+cppQueue co2_readings(sizeof(CO2_reading),
+  maxCO2_queue_len,
+  FIFO,
+  true);
+  
 unsigned long lastRead = 0UL;
-const uint32_t CO_read_len = 5760;
-uint16_t CO_readings[CO_read_len];
-time_t CO_timings[CO_read_len];
-uint16_t CO_reading_idx = 0;
-uint32_t CO_reading_count = 0;
+// const uint32_t CO_read_len = 5760;
+// uint16_t CO_readings[CO_read_len];
+// time_t CO_timings[CO_read_len];
+// uint16_t CO_reading_idx = 0;
+// uint32_t CO_reading_count = 0;
+
+const uint16_t graph_w = 400;
+const uint16_t graph_h = 400;
 
 const char* graph_header = "<div class=\"slds-p-top--medium\"><div><svg version=\"1.2\" xmlns=\"http://www.w3.org/2000/svg\"\
-xmlns:xlink\"http://www.w3.org/1999/xlink\" class=\"co2-graph\" width=\"800px\" height=\"800px\">\
+xmlns:xlink\"http://www.w3.org/1999/xlink\" class=\"co2-graph\" width=\"400px\" height=\"400px\">\
 <g class=\"label-title\">\
 <text x=\"-160\" y=\"5\" transform=\"rotate(-90)\">ppm</text>\
 </g>\
@@ -52,6 +72,16 @@ xmlns:xlink\"http://www.w3.org/1999/xlink\" class=\"co2-graph\" width=\"800px\" 
 </g>\
 <g class=\"y-labels\">";
 const char* graph_footer = "\"></polyline></svg></div></div>";
+
+const char* current_data_css = "p,h1{font-family:sans-serif;margin:10px;padding:10px;}"
+"h1{color:white;background:blue;}"
+".reading{color:blue;font-weight:bold;font-size:120px;text-align:center;}\n";
+
+// .reading {
+// color: black;
+// alignment: center;
+// size: large;
+// }
 
 boolean restoreConfig();
 boolean checkConnection();
@@ -156,10 +186,12 @@ void loop() {
           Serial.print(result);
           Serial.println(F(" ppm"));
           lastRead = millis();
-          CO_readings[CO_reading_idx] = (uint16_t) result;
-          CO_timings[CO_reading_idx] = now();
-          CO_reading_idx = (CO_reading_idx + 1) % CO_read_len;
-          CO_reading_count++;
+          CO2_reading latest = {now(), result};
+          co2_readings.push(&latest);
+          // CO_readings[CO_reading_idx] = (uint16_t) result;
+          // CO_timings[CO_reading_idx] = now();
+          // CO_reading_idx = (CO_reading_idx + 1) % CO_read_len;
+          // CO_reading_count++;
         }
       }
     }
@@ -282,11 +314,13 @@ void startWebServer() {  // Open the web service.  打开Web服务
     webServer.on("/data", []() {
       String s =
         "<h1>CO<sub>2</sub> data</h1><p>CO<sub>2</sub> data</p>\n<table><tr><th>Index</th><th>Time</th><th>CO2 ppm</th></tr>\n";
-      for (uint16_t i = 0; i < CO_reading_idx; i++) {
+      for (uint16_t i = 0; i < co2_readings.getCount(); i++) {
+        CO2_reading reading;
+        co2_readings.peekIdx(&reading, i);
         s = s + "<tr><td>" 
           + i + "</td><td>"
-          + dateTime(CO_timings[i]) + "</td><td>"
-          + CO_readings[i] + "</td></tr>\n";
+          + dateTime(reading.time) + "</td><td>"
+          + reading.ppm + "</td></tr>\n";
       }
       s = s + "</table>\n";
       webServer.send(200, "text/html", makePage("CO2 data", s));
@@ -294,10 +328,12 @@ void startWebServer() {  // Open the web service.  打开Web服务
     webServer.on("/data.csv", []() {
       String s =
         "Index,Time,CO2 ppm\n";
-      for (uint16_t i = 0; i < CO_reading_idx; i++) {
+      for (uint16_t i = 0; i < co2_readings.getCount(); i++) {
+        CO2_reading reading;
+        co2_readings.peekIdx(&reading, i);
         s = s + i + ","
-          + dateTime(CO_timings[i], RFC3339) + ","
-          + CO_readings[i] + "\n";
+          + dateTime(reading.time, RFC3339) + ","
+          + reading.ppm + "\n";
       }
       webServer.send(200, "text/csv", s);
     });
@@ -305,32 +341,34 @@ void startWebServer() {  // Open the web service.  打开Web服务
       uint16_t CO_average = 0;
       int16_t offset = 0;
       String s =
-        "<h1>Current CO<sub>2</sub></h1><p>";
-      if ( CO_reading_count == 0 ) {
+        "<h1>Current CO<sub>2</sub></h1><p class=\"reading\">";
+      if ( co2_readings.isEmpty() ) {
         s = s + "Still warming up</p>";
-      } else if ( CO_reading_count < 10) {
-        for ( offset=0; offset < CO_reading_count; offset++) {
-          CO_average += CO_readings[((int16_t)offset )];
+      } else if ( co2_readings.getCount() < 10) {
+        for ( offset=0; offset < co2_readings.getCount() ; offset++) {
+          CO2_reading reading;
+          co2_readings.peekIdx(&reading, offset);          
+          CO_average += reading.ppm;
         }
-        CO_average /= (CO_reading_count + 1);
+        CO_average /= (co2_readings.getCount());
         s = s + CO_average + " ppm</p><p>Since readings began (less than 5 minutes ago).</p>\n";
       } else {
-        for ( offset=0; offset < 10; offset++) {
-          CO_average += CO_readings[((int16_t)CO_reading_idx - offset )%CO_read_len];
+        for ( offset=1; offset <= 10; offset++) {
+          CO2_reading reading;
+          co2_readings.peekIdx(&reading, co2_readings.getCount() - offset);
+          CO_average += reading.ppm;
         }
         CO_average /= 10;
         s = s + CO_average + " ppm</p><p>Last 5 minutes</p>\n";
       }
-      webServer.send(200, "text/html", makePage("Current CO2", s));
+      webServer.send(200, "text/html", makeStyledPage("Current CO2", current_data_css, s));
     });
     webServer.on("/graph", []() {
       uint16_t CO_max = 0;
       uint32_t offset = 0;
-      const uint16_t graph_w = 400;
-      const uint16_t graph_h = 400;
       String s =
         "<h1>CO<sub>2</sub> for 24 hours</h1><p>";
-      if ( CO_reading_count == 0 ) {
+      if ( co2_readings.getCount() == 0 ) {
         s = s + "Still warming up</p>";
         webServer.send(200, "text/html", makePage("CO2 graph - still warming up", s));
       } else {
@@ -338,26 +376,34 @@ void startWebServer() {  // Open the web service.  打开Web服务
         s = s + "CO<sub>2</sub> concentrations for the past 24 hours</p>"
          + graph_header;
         
-        offset_max = min(CO_reading_count, CO_read_len);
-        for ( offset=0; offset < offset_max; offset++) {
-          CO_max = max(CO_max, CO_readings[offset]);
-        }
+        // offset_max = min(co2_readings.getCount(), readings_in_day);
+        // for ( offset=1; offset <= offset_max; offset++) {
+        //   CO2_reading reading;
+        //   co2_readings.peekIdx(&reading, co2_readings.getCount() - offset);
+        //   CO_max = max(CO_max, reading.ppm);
+        // }
         float CO_max_upper, CO_tick_increment;
         CO_max_upper = (round((float)CO_max / 300.0) + 1.0) * 300.0;
+        CO_max_upper = 1200.0; // fixed for now
         CO_tick_increment = CO_max_upper / 6.;    
 
         for (int y = 0 ; y < 7 ; y++) {
-          s = s + "<text x=\"42\" y=\"" + uint16_t(5 + y * 50)
+          s = s + "<text x=\"42\" y=\"" + uint16_t(5 + y * (graph_h-50) / 6 )
           + "\">" + uint16_t(CO_max_upper - CO_tick_increment * y) 
           + "</text>\n"; 
         }
         s = s + "</g><polyline fill=\"none\" stroke=\"#00ee00\" stroke-width=\"2\" points=\"\n";
 
         // This needs to be bounded to 24 hours as well
-        for (offset = offset_max-1; offset >= 0; offset--) {
+        offset_max = min(uint32_t(co2_readings.getCount()), readings_in_day);
+        float x_inc = 1.0 / float(readings_in_day);
+        for ( offset=1; offset <= offset_max; offset++) {
+          CO2_reading reading;
+          co2_readings.peekIdx(&reading, co2_readings.getCount() - offset);
           int16_t x, y;
-          y = (1.0 - float(CO_readings[offset]) / CO_max_upper)* float(graph_h-50);
-          x = (1.0 - float(offset-offset_max)) * float(graph_w-50);
+          
+          y = (1.0 - float(reading.ppm) / CO_max_upper)* float(graph_h-50);
+          x = 50 + (1.0 - float(offset)*x_inc) * float(graph_w-50);
           s = s + x + "," + y + "\n";
         }
         s = s + graph_footer;
@@ -406,6 +452,19 @@ String makePage(String title, String contents) {
   return s;
 }
 
+String makeStyledPage(String title, String css, String contents) {
+  String s = "<!DOCTYPE html><html><head>";
+  s += "<meta name=\"viewport\" "
+       "content=\"width=device-width,user-scalable=0\">";
+  s += "<title>";
+  s += title;
+  s += "</title><style>";
+  s += css;
+  s += "</style></head><body>";
+  s += contents;
+  s += "</body></html>";
+  return s;
+}
 String urlDecode(String input) {
   String s = input;
   s.replace("%20", " ");
