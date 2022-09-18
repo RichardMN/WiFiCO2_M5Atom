@@ -56,7 +56,7 @@ unsigned long lastRead = 0UL;
 
 const char* graph_header = "<p></p><div class=\"cograph\"><svg version=\"1.2\" xmlns=\
 \"http://www.w3.org/2000/svg\" xmlns:xlink\"http://www.w3.org/1999/xlink\" class=\
-\"cograph\" width=\"400px\" height=\"400px\">\
+\"cograph\" width=\"400px\" height=\"400px\" overflow=\"visible\">\
 <g class=\"label-title\">\
 <text x=\"-200\" y=\"10\" transform=\"rotate(-90)\">ppm</text>\
 </g>\
@@ -70,8 +70,10 @@ const char* current_data_css = "p,h1{font-family:sans-serif;margin:10px;padding:
                                "h1{color:white;background:blue;}"
                                ".reading{color:blue;font-weight:bold;font-size:120px;text-align:center;}\n";
 
-const char* graph_data_css = "<style>svg.cograph{overflow-x:visible;overflow-y:visible;}"
-".label-title,.y-labels,.x-labels{font-family:sans-serif;}</style>\n";
+const char* graph_data_css = "p,h1{font-family:sans-serif;margin:10px;padding:10px;}"
+                              "h1{color:white;background:blue;}"
+                              "svg.cograph{overflow-x:visible;overflow-y:visible;margin:10px;}.cograph{margin:20px;padding:20px;}"
+    ".label-title,.y-labels,.x-labels{font-family:sans-serif;text-anchor:middle;}.y-labels{text-anchor:end;}\n";
 
 const uint16_t graph_w = 400;
 const uint16_t graph_h = 400;
@@ -385,21 +387,21 @@ void startWebServer() {  // Open the web service.  打开Web服务
 
       s = s + "CO<sub>2</sub> concentrations for the past 24 hours</p>"
           + graph_header + "<text x=\"";
-      toGraphCoords(0.00, -0.015, graphX, graphY);
+      toGraphCoords(0.00, -0.1, graphX, graphY);
       s += graphX + y_insert + graphY + "\">24</text>\n<text x=\"";
-      toGraphCoords(0.25, -0.025, graphX, graphY);
+      toGraphCoords(0.25, -0.1, graphX, graphY);
       s += graphX + y_insert + graphY + "\">18</text>\n<text x=\"";
-      toGraphCoords(0.50, -0.015, graphX, graphY);
+      toGraphCoords(0.50, -0.1, graphX, graphY);
       s += graphX + y_insert + graphY + "\">12</text>\n<text x=\"";
-      toGraphCoords(0.75, -0.025, graphX, graphY);
+      toGraphCoords(0.75, -0.1, graphX, graphY);
       s += graphX + y_insert + graphY + "\">6</text>\n<text x=\"";
-      toGraphCoords(1.00, -0.01, graphX, graphY);
+      toGraphCoords(1.00, -0.1, graphX, graphY);
       s += graphX + y_insert + graphY + "\">Now</text>\n";
 
       s += "</g><g class=\"y-labels\">";
       
       for (int y = 0; y < 7; y++) {
-        toGraphCoords(-0.1, float(y) / 6.0, graphX, graphY);
+        toGraphCoords(-0.05, float(y) / 6.0, graphX, graphY);
         s += String("<text s=\"") + graphX + String("\" y=\"") + graphY + String("\">")
              + uint16_t(CO_tick_increment * y)
              + String("</text>\n");
