@@ -6,15 +6,30 @@
 *******************************************************************************
 */
 #include <M5Atom.h>
+// Connection to the sensor
 #include <ErriezMHZ19B.h>
 #include <SoftwareSerial.h>
+// Networking functions
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <WiFiClient.h>
 #include "WebServer.h"
 #include <Preferences.h>
+// Data management
 #include <cppQueue.h>
 #include <ezTime.h>
+// Necessary for graphic display
+#include <Adafruit_GFX.h>
+#include <FastLED.h>
+#include <FastLED_NeoMatrix.h>
+#include <Fonts/TomThumb.h>
+
+// LED display settings
+#define LED_PIN 27
+#define mw 5
+#define mh 5
+#define NUMMATRIX (mw*mh)
+
 
 #if defined(ARDUINO_ARCH_ESP32)
 // #define MHZ19B_TX_PIN        18
@@ -28,6 +43,21 @@ SoftwareSerial mhzSerial;
 #endif  // ARDUINO_ARCH_ESP32
 
 ErriezMHZ19B mhz19b(&mhzSerial);
+
+// LED display variables
+CRGB matrixleds[NUMMATRIX];
+
+FastLED_NeoMatrix *matrix = new FastLED_NeoMatrix(matrixleds, mw, mh, 
+  NEO_MATRIX_TOP     + NEO_MATRIX_RIGHT +
+    NEO_MATRIX_COLUMNS + NEO_MATRIX_PROGRESSIVE );
+
+const uint16_t colors[] = {
+  matrix->Color(255, 0, 0), matrix->Color(0, 255, 0), matrix->Color(0, 0, 255) };
+
+int16_t display_x = 0;
+unsigned long display_tick = 0UL;
+
+
 
 const uint32_t maxCO2_queue_len = 240;
 const uint32_t maxCO2_sum_len = 12 * 48; // 12 summary points per hour for 48 hours
@@ -90,11 +120,6 @@ inline void toGraphCoords(float x, float y, int& graphX, int& graphY) {
   graphX = float(graph_w - leftMargin) * x + float(leftMargin);
   graphY = float(graph_h - bottomMargin) * (1.0 - y) - float(bottomMargin);
 }
-// .reading {
-// color: black;
-// alignment: center;
-// size: large;
-// }
 
 boolean restoreConfig();
 boolean checkConnection();
@@ -139,6 +164,18 @@ void setup() {
   char firmwareVersion[5];
   M5.begin(true, false, true);  // Init Atom(Initialize serial port, LED).
                                 // 初始化 ATOM(初始化串口、LED)
+  // Set up LED display
+  FastLED.addLeds<NEOPIXEL,LED_PIN>(matrixleds, NUMMATRIX);
+  matrix->begin();
+  matrix->setTextWrap(false);
+  matrix->setFont(&TomThumb);
+  matrix->setBrightness(40);
+  matrix->setTextColor(colors[0]);
+  
+  matrix->setCursor(display_x, mh);
+  matrix->print(F("Warming up"));
+  matrix->show();
+  
   preferences.begin("wifi-config");
   delay(10);
   if (restoreConfig()) {      // Check if wifi configuration information has been
@@ -174,21 +211,36 @@ void loop() {
   } else {
     // Sensor requires 3 minutes warming-up after power-on
     if (mhz19b.isWarmingUp()) {
-      int i;
-      M5.dis.fillpix(0xeeee00);
-      for (i = 0; i < lastRead / 7000; i++) {
-        M5.dis.drawpix(i % 5, i / 5, 0x00ff00);
-      }
+      // int i;
+      // M5.dis.fillpix(0xeeee00);
+      // for (i = 0; i < lastRead / 7000; i++) {
+      //   M5.dis.drawpix(i % 5, i / 5, 0x00ff00);
+      // }
       Serial.println(F("Warming up..."));
       delay(7000);
       lastRead = millis();
     } else {
-      M5.dis.fillpix(0x00ff00);
+      //M5.dis.fillpix(0x000000);
+      // if (millis() - display_tick > 100) {
+      //   display_x--;
+      //   if ( display_x < -50 ) {
+      //     display_x = matrix->width();
+      //   }
+      //   matrix->setCursor(display_x, mh);
+      //   matrix->show();
+      //   display_tick = millis();
+      // }
       if ((millis() - lastRead > 30000)
           && mhz19b.isReady()) {
         int16_t result;
         // Read CO2 concentration from sensor
         result = mhz19b.readCO2();
+        if ( co2_readings.getCount() < 10 ) {
+          matrix->fillScreen(0);
+          matrix->setCursor(display_x, mh);
+          matrix->print(String(result) + " ppm");
+          matrix->show();
+        }
         // Print result
         if (result < 0) {
           // An error occurred
@@ -219,10 +271,23 @@ void loop() {
             summary.ppm_mean /= 10;
             summary.time = reading.time;
             co2_summaries.push(&summary);
+            matrix->setCursor(display_x, mh);
+            matrix->print(String(summary.ppm_mean) + " ppm");
+            matrix->show();
           }
         }
       }
     }
+  }
+  if (millis() - display_tick > 100) {
+    display_x--;
+    if ( display_x < -50 ) {
+      display_x = matrix->width();
+    }
+    matrix->fillScreen(0);
+    matrix->setCursor(display_x, mh);
+    matrix->show();
+    display_tick = millis();
   }
   webServer
     .handleClient();  // Check for devices sending requests to the M5ATOM
