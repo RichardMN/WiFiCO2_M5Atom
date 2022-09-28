@@ -29,9 +29,11 @@ SoftwareSerial mhzSerial;
 
 ErriezMHZ19B mhz19b(&mhzSerial);
 
-const uint32_t maxCO2_queue_len = 5760;
+const uint32_t maxCO2_queue_len = 240;
+const uint32_t maxCO2_sum_len = 12 * 48; // 12 summary points per hour for 48 hours
 const uint32_t reading_interval_seconds = 30;
-const uint32_t readings_in_day = 24 * 60 * 60 / reading_interval_seconds;
+const uint32_t readings_in_day = 24 * 12;
+// const uint32_t readings_in_day = 24 * 60 * 60 / reading_interval_seconds;
 // const uint32_t readings_in_day = 120; // fake out to scale graph
 
 typedef struct strCO2_reading {
@@ -39,20 +41,24 @@ typedef struct strCO2_reading {
   uint16_t ppm;
 } CO2_reading;
 
+typedef struct strCO2_reading_sum {
+  time_t time;
+  uint16_t ppm_mean;
+  uint16_t ppm_min;
+  uint16_t ppm_max;
+} CO2_reading_sum;
 
 cppQueue co2_readings(sizeof(CO2_reading),
                       maxCO2_queue_len,
                       FIFO,
                       true);
 
+cppQueue co2_summaries(sizeof(CO2_reading_sum),
+                      maxCO2_sum_len,
+                      FIFO,
+                      true);
+
 unsigned long lastRead = 0UL;
-// const uint32_t CO_read_len = 5760;
-// uint16_t CO_readings[CO_read_len];
-// time_t CO_timings[CO_read_len];
-// uint16_t CO_reading_idx = 0;
-// uint32_t CO_reading_count = 0;
-
-
 
 const char* graph_header = "<p></p><div class=\"cograph\"><svg version=\"1.2\" xmlns=\
 \"http://www.w3.org/2000/svg\" xmlns:xlink\"http://www.w3.org/1999/xlink\" class=\
@@ -195,10 +201,25 @@ void loop() {
           lastRead = millis();
           CO2_reading latest = { now(), result };
           co2_readings.push(&latest);
-          // CO_readings[CO_reading_idx] = (uint16_t) result;
-          // CO_timings[CO_reading_idx] = now();
-          // CO_reading_idx = (CO_reading_idx + 1) % CO_read_len;
-          // CO_reading_count++;
+          if ( co2_readings.getCount() % 10 == 0 ) {
+            uint16_t offset_max, index;
+            offset_max = co2_readings.getCount()-1;
+            CO2_reading reading;
+            CO2_reading_sum summary;
+            summary.ppm_max = 0;
+            summary.ppm_min = 32000;
+            summary.ppm_mean = 0;
+            for (index = 0; index < 10; index++) {
+
+              co2_readings.peekIdx(&reading, offset_max - index);
+              summary.ppm_max = max(reading.ppm, summary.ppm_max);
+              summary.ppm_min = min(reading.ppm, summary.ppm_min);
+              summary.ppm_mean += reading.ppm;
+            }
+            summary.ppm_mean /= 10;
+            summary.time = reading.time;
+            co2_summaries.push(&summary);
+          }
         }
       }
     }
@@ -318,9 +339,9 @@ void startWebServer() {  // Open the web service.  打开Web服务
         "<h1>Hello World</h1><p>Hello world!</p>";
       webServer.send(200, "text/html", makePage("Hello world", s));
     });
-    webServer.on("/data", []() {
+    webServer.on("/dataraw", []() {
       String s =
-        "<h1>CO<sub>2</sub> data</h1><p>CO<sub>2</sub> data</p>\n<table><tr><th>Index</th><th>Time</th><th>CO2 ppm</th></tr>\n";
+        "<h1>CO<sub>2</sub> data (raw)</h1><p>CO<sub>2</sub> data</p>\n<table><tr><th>Index</th><th>Time</th><th>CO2 ppm</th></tr>\n";
       for (uint16_t i = 0; i < co2_readings.getCount(); i++) {
         CO2_reading reading;
         co2_readings.peekIdx(&reading, i);
@@ -332,7 +353,24 @@ void startWebServer() {  // Open the web service.  打开Web服务
       s = s + "</table>\n";
       webServer.send(200, "text/html", makePage("CO2 data", s));
     });
-    webServer.on("/data.csv", []() {
+    webServer.on("/data", []() {
+      String s =
+        "<h1>CO<sub>2</sub> data (summary)</h1><p>CO<sub>2</sub> data, Mean/Minimum/Maximum of 10 samples for 5 minute intervals</p>\n"
+        "<table><tr><th>Index</th><th>Time</th><th>Mean CO2 ppm</th><th>Min CO2 ppm</th><th>Max CO2 ppm</th></tr>\n";
+      for (uint16_t i = 0; i < co2_summaries.getCount(); i++) {
+        CO2_reading_sum summary;
+        co2_summaries.peekIdx(&summary, i);
+        s = s + "<tr><td>"
+            + i + "</td><td>"
+            + dateTime(summary.time) + "</td><td>"
+            + summary.ppm_mean + "</td><td>"
+            + summary.ppm_min +  "</td><td>"
+            + summary.ppm_max + "</td></tr>\n";
+      }
+      s = s + "</table>\n";
+      webServer.send(200, "text/html", makePage("CO2 data", s));
+    });
+    webServer.on("/dataraw.csv", []() {
       String s =
         "Index,Time,CO2 ppm\n";
       for (uint16_t i = 0; i < co2_readings.getCount(); i++) {
@@ -341,6 +379,20 @@ void startWebServer() {  // Open the web service.  打开Web服务
         s = s + i + ","
             + dateTime(reading.time, RFC3339) + ","
             + reading.ppm + "\n";
+      }
+      webServer.send(200, "text/csv", s);
+    });
+    webServer.on("/data.csv", []() {
+      String s =
+        "Index,Time,CO2 ppm mean,CO2 ppm min,CO2 ppm max\n";
+      for (uint16_t i = 0; i < co2_summaries.getCount(); i++) {
+        CO2_reading_sum summary;
+        co2_summaries.peekIdx(&summary, i);
+       s = s + i + ","
+            + dateTime(summary.time, RFC3339) + ","
+            + summary.ppm_mean + ","
+            + summary.ppm_min + ","
+            + summary.ppm_max + "\n";
       }
       webServer.send(200, "text/csv", s);
     });
@@ -416,16 +468,42 @@ void startWebServer() {  // Open the web service.  打开Web服务
       
       s = s + "\"></polyline><polyline fill=\"none\" stroke=\"#00ee00\" stroke-width=\"2\" points=\"\n";
 
-      if (co2_readings.getCount() > 0) {
+      if (co2_summaries.getCount() > 0) {
         // This needs to be bounded to 24 hours as well
-        offset_max = min(uint32_t(co2_readings.getCount()), readings_in_day);
+        offset_max = min(uint32_t(co2_summaries.getCount()), readings_in_day);
         float x_inc = 1.0 / float(readings_in_day);
         for (offset = 1; offset <= offset_max; offset++) {
-          CO2_reading reading;
-          co2_readings.peekIdx(&reading, co2_readings.getCount() - offset);
+          CO2_reading_sum summary;
+          co2_summaries.peekIdx(&summary, co2_summaries.getCount() - offset);
           //int16_t x, y;
-          toGraphCoords(1.0 - float(offset) / float(readings_in_day),
-                        float(reading.ppm) / CO_max_upper, graphX, graphY);
+          toGraphCoords(1.0 - float(offset) * x_inc,
+                        float(summary.ppm_mean) / CO_max_upper, graphX, graphY);
+          // y = (1.0 - float(reading.ppm) / CO_max_upper)* float(graph_h-50);
+          // x = 50 + (1.0 - float(offset)*x_inc) * float(graph_w-50);
+          s = s + graphX + "," + graphY + "\n";
+        }
+      
+        s = s + "\"></polyline><polyline fill=\"none\" stroke=\"#cccccc\" stroke-width=\"1\" points=\"\n";
+      
+        for (offset = 1; offset <= offset_max; offset++) {
+          CO2_reading_sum summary;
+          co2_summaries.peekIdx(&summary, co2_summaries.getCount() - offset);
+          //int16_t x, y;
+          toGraphCoords(1.0 - float(offset) * x_inc,
+                        float(summary.ppm_min) / CO_max_upper, graphX, graphY);
+          // y = (1.0 - float(reading.ppm) / CO_max_upper)* float(graph_h-50);
+          // x = 50 + (1.0 - float(offset)*x_inc) * float(graph_w-50);
+          s = s + graphX + "," + graphY + "\n";
+        }
+      
+        s = s + "\"></polyline><polyline fill=\"none\" stroke=\"#cccccc\" stroke-width=\"1\" points=\"\n";
+      
+        for (offset = 1; offset <= offset_max; offset++) {
+          CO2_reading_sum summary;
+          co2_summaries.peekIdx(&summary, co2_summaries.getCount() - offset);
+          //int16_t x, y;
+          toGraphCoords(1.0 - float(offset) * x_inc,
+                        float(summary.ppm_max) / CO_max_upper, graphX, graphY);
           // y = (1.0 - float(reading.ppm) / CO_max_upper)* float(graph_h-50);
           // x = 50 + (1.0 - float(offset)*x_inc) * float(graph_w-50);
           s = s + graphX + "," + graphY + "\n";
