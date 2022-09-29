@@ -6,23 +6,19 @@
 *******************************************************************************
 */
 #include <M5Atom.h>
+#include "WiFiCO2_M5Atom.h"
 // Connection to the sensor
 #include <ErriezMHZ19B.h>
 #include <SoftwareSerial.h>
-// Networking functions
-#include <WiFi.h>
-#include <ESPmDNS.h>
-#include <WiFiClient.h>
-#include "WebServer.h"
-#include <Preferences.h>
 // Data management
 #include <cppQueue.h>
-#include <ezTime.h>
+
 // Necessary for graphic display
 #include <Adafruit_GFX.h>
 #include <FastLED.h>
 #include <FastLED_NeoMatrix.h>
 #include <Fonts/TomThumb.h>
+#include <Framebuffer_GFX.h>
 
 // LED display settings
 #define LED_PIN 27
@@ -47,7 +43,7 @@ ErriezMHZ19B mhz19b(&mhzSerial);
 // LED display variables
 CRGB matrixleds[NUMMATRIX];
 
-FastLED_NeoMatrix *matrix = new FastLED_NeoMatrix(matrixleds, mw, mh, 
+FastLED_NeoMatrix *matrix = new FastLED_NeoMatrix(matrixleds, mw, mh,
   NEO_MATRIX_TOP     + NEO_MATRIX_RIGHT +
     NEO_MATRIX_COLUMNS + NEO_MATRIX_PROGRESSIVE );
 
@@ -66,18 +62,6 @@ const uint32_t readings_in_day = 24 * 12;
 // const uint32_t readings_in_day = 24 * 60 * 60 / reading_interval_seconds;
 // const uint32_t readings_in_day = 120; // fake out to scale graph
 
-typedef struct strCO2_reading {
-  time_t time;
-  uint16_t ppm;
-} CO2_reading;
-
-typedef struct strCO2_reading_sum {
-  time_t time;
-  uint16_t ppm_mean;
-  uint16_t ppm_min;
-  uint16_t ppm_max;
-} CO2_reading_sum;
-
 cppQueue co2_readings(sizeof(CO2_reading),
                       maxCO2_queue_len,
                       FIFO,
@@ -89,37 +73,6 @@ cppQueue co2_summaries(sizeof(CO2_reading_sum),
                       true);
 
 unsigned long lastRead = 0UL;
-
-const char* graph_header = "<p></p><div class=\"cograph\"><svg version=\"1.2\" xmlns=\
-\"http://www.w3.org/2000/svg\" xmlns:xlink\"http://www.w3.org/1999/xlink\" class=\
-\"cograph\" width=\"400px\" height=\"400px\" overflow=\"visible\">\
-<g class=\"label-title\">\
-<text x=\"-200\" y=\"10\" transform=\"rotate(-90)\">ppm</text>\
-</g>\
-<g class=\"label-title\">\
-<text x=\"50%\" y=\"380\">Time</text>\
-</g>\
-<g class=\"x-labels\">";
-const char* graph_footer = "\"></polyline></svg></div>";
-
-const char* current_data_css = "p,h1{font-family:sans-serif;margin:10px;padding:10px;}"
-                               "h1{color:white;background:blue;}"
-                               ".reading{color:blue;font-weight:bold;font-size:120px;text-align:center;}\n";
-
-const char* graph_data_css = "p,h1{font-family:sans-serif;margin:10px;padding:10px;}"
-                              "h1{color:white;background:blue;}"
-                              "svg.cograph{overflow-x:visible;overflow-y:visible;margin:10px;}.cograph{margin:20px;padding:20px;}"
-    ".label-title,.y-labels,.x-labels{font-family:sans-serif;text-anchor:middle;}.y-labels{text-anchor:end;}\n";
-
-const uint16_t graph_w = 400;
-const uint16_t graph_h = 400;
-const int leftMargin = 50;
-const int bottomMargin = 50;
-
-inline void toGraphCoords(float x, float y, int& graphX, int& graphY) {
-  graphX = float(graph_w - leftMargin) * x + float(leftMargin);
-  graphY = float(graph_h - bottomMargin) * (1.0 - y) - float(bottomMargin);
-}
 
 boolean restoreConfig();
 boolean checkConnection();
@@ -170,12 +123,12 @@ void setup() {
   matrix->setTextWrap(false);
   matrix->setFont(&TomThumb);
   matrix->setBrightness(40);
-  matrix->setTextColor(colors[0]);
-  
+  matrix->setTextColor(matrix->Color(255,255,255), matrix->Color(0,0,0));
+
   matrix->setCursor(display_x, mh);
   matrix->print(F("Warming up"));
   matrix->show();
-  
+
   preferences.begin("wifi-config");
   delay(10);
   if (restoreConfig()) {      // Check if wifi configuration information has been
@@ -207,17 +160,22 @@ void setup() {
 
 void loop() {
   if (settingMode) {
-    M5.dis.fillpix(0xff0000);
+    //M5.dis.fillpix(0xff0000);
+    matrix->fillScreen(matrix->Color(255,0,0));
   } else {
     // Sensor requires 3 minutes warming-up after power-on
     if (mhz19b.isWarmingUp()) {
-      // int i;
-      // M5.dis.fillpix(0xeeee00);
-      // for (i = 0; i < lastRead / 7000; i++) {
-      //   M5.dis.drawpix(i % 5, i / 5, 0x00ff00);
-      // }
+      matrix->fillScreen(matrix->Color(0,0,0));
+      display_x--;
+      if ( display_x < -40 ) {
+        display_x = matrix->width();
+      }
+      matrix->setCursor(display_x, mh);
+      matrix->print("Warming up");
+      matrix->show();
+
       Serial.println(F("Warming up..."));
-      delay(7000);
+      delay(1000);
       lastRead = millis();
     } else {
       //M5.dis.fillpix(0x000000);
@@ -279,16 +237,16 @@ void loop() {
       }
     }
   }
-  if (millis() - display_tick > 100) {
-    display_x--;
-    if ( display_x < -50 ) {
-      display_x = matrix->width();
-    }
-    matrix->fillScreen(0);
-    matrix->setCursor(display_x, mh);
-    matrix->show();
-    display_tick = millis();
-  }
+  // if (millis() - display_tick > 100) {
+  //   display_x--;
+  //   if ( display_x < -50 ) {
+  //     display_x = matrix->width();
+  //   }
+  //   matrix->fillScreen(0);
+  //   matrix->setCursor(display_x, mh);
+  //   matrix->show();
+  //   display_tick = millis();
+  // }
   webServer
     .handleClient();  // Check for devices sending requests to the M5ATOM
                       // web server over the network.
@@ -341,17 +299,7 @@ void startWebServer() {  // Open the web service.  打开Web服务
                          // you want through apIP at the beginning).
                          // 输出AP地址(可通过开头的apIP更改自己想要的地址)
     webServer.on(
-      "/settings", []() {  // AP web interface settings.  AP网页界面设置
-        String s =
-          "<h1>Wi-Fi Settings</h1><p>Please enter your password by "
-          "selecting the SSID.</p>";
-        s += "<form method=\"get\" action=\"setap\"><label>SSID: "
-             "</label><select name=\"ssid\">";
-        s += ssidList;
-        s += "</select><br>Password: <input name=\"pass\" length=64 "
-             "type=\"password\"><input type=\"submit\"></form>";
-        webServer.send(200, "text/html", makePage("Wi-Fi Settings", s));
-      });
+      "/settings", cb_settings );
     webServer.on("/setap", []() {
       String ssid = urlDecode(webServer.arg("ssid"));
       Serial.printf("SSID: %s\n", ssid);
@@ -399,184 +347,13 @@ void startWebServer() {  // Open the web service.  打开Web服务
       delay(2000);
       ESP.restart();
     });
-    webServer.on("/hello", []() {
-      String s =
-        "<h1>Hello World</h1><p>Hello world!</p>";
-      webServer.send(200, "text/html", makePage("Hello world", s));
-    });
-    webServer.on("/dataraw", []() {
-      String s =
-        "<h1>CO<sub>2</sub> data (raw)</h1><p>CO<sub>2</sub> data</p>\n<table><tr><th>Index</th><th>Time</th><th>CO2 ppm</th></tr>\n";
-      for (uint16_t i = 0; i < co2_readings.getCount(); i++) {
-        CO2_reading reading;
-        co2_readings.peekIdx(&reading, i);
-        s = s + "<tr><td>"
-            + i + "</td><td>"
-            + dateTime(reading.time) + "</td><td>"
-            + reading.ppm + "</td></tr>\n";
-      }
-      s = s + "</table>\n";
-      webServer.send(200, "text/html", makePage("CO2 data", s));
-    });
-    webServer.on("/data", []() {
-      String s =
-        "<h1>CO<sub>2</sub> data (summary)</h1><p>CO<sub>2</sub> data, Mean/Minimum/Maximum of 10 samples for 5 minute intervals</p>\n"
-        "<table><tr><th>Index</th><th>Time</th><th>Mean CO2 ppm</th><th>Min CO2 ppm</th><th>Max CO2 ppm</th></tr>\n";
-      for (uint16_t i = 0; i < co2_summaries.getCount(); i++) {
-        CO2_reading_sum summary;
-        co2_summaries.peekIdx(&summary, i);
-        s = s + "<tr><td>"
-            + i + "</td><td>"
-            + dateTime(summary.time) + "</td><td>"
-            + summary.ppm_mean + "</td><td>"
-            + summary.ppm_min +  "</td><td>"
-            + summary.ppm_max + "</td></tr>\n";
-      }
-      s = s + "</table>\n";
-      webServer.send(200, "text/html", makePage("CO2 data", s));
-    });
-    webServer.on("/dataraw.csv", []() {
-      String s =
-        "Index,Time,CO2 ppm\n";
-      for (uint16_t i = 0; i < co2_readings.getCount(); i++) {
-        CO2_reading reading;
-        co2_readings.peekIdx(&reading, i);
-        s = s + i + ","
-            + dateTime(reading.time, RFC3339) + ","
-            + reading.ppm + "\n";
-      }
-      webServer.send(200, "text/csv", s);
-    });
-    webServer.on("/data.csv", []() {
-      String s =
-        "Index,Time,CO2 ppm mean,CO2 ppm min,CO2 ppm max\n";
-      for (uint16_t i = 0; i < co2_summaries.getCount(); i++) {
-        CO2_reading_sum summary;
-        co2_summaries.peekIdx(&summary, i);
-       s = s + i + ","
-            + dateTime(summary.time, RFC3339) + ","
-            + summary.ppm_mean + ","
-            + summary.ppm_min + ","
-            + summary.ppm_max + "\n";
-      }
-      webServer.send(200, "text/csv", s);
-    });
-    webServer.on("/", []() {
-      uint16_t CO_average = 0;
-      int16_t offset = 0;
-      String s =
-        "<h1>Current CO<sub>2</sub></h1><p class=\"reading\">";
-      if (co2_readings.isEmpty()) {
-        s = s + "Still warming up</p>";
-      } else if (co2_readings.getCount() < 10) {
-        for (offset = 0; offset < co2_readings.getCount(); offset++) {
-          CO2_reading reading;
-          co2_readings.peekIdx(&reading, offset);
-          CO_average += reading.ppm;
-        }
-        CO_average /= (co2_readings.getCount());
-        s = s + CO_average + " ppm</p><p>Since readings began (less than 5 minutes ago).</p>\n";
-      } else {
-        for (offset = 1; offset <= 10; offset++) {
-          CO2_reading reading;
-          co2_readings.peekIdx(&reading, co2_readings.getCount() - offset);
-          CO_average += reading.ppm;
-        }
-        CO_average /= 10;
-        s = s + CO_average + " ppm</p><p>Last 5 minutes</p>\n";
-      }
-      webServer.send(200, "text/html", makeStyledPage("Current CO2", current_data_css, s));
-    });
-    webServer.on("/graph", []() {
-      uint16_t CO_max = 0;
-      uint32_t offset = 0;
-      String s = "<h1>CO<sub>2</sub> for 24 hours</h1><p>";
-      uint32_t offset_max;
-      int graphX, graphY;
-      float CO_max_upper, CO_tick_increment;
-      String y_insert = String("\" y=\"");
-      CO_max_upper = (round((float)CO_max / 300.0) + 1.0) * 300.0;
-      if (1 | co2_readings.getCount() == 0) {  // for now always use 1200 as max
-        CO_max_upper = 1200.0;                 // fixed for now
-      }
-      // else { } // this is where logic for setting the upper max would go
-      CO_tick_increment = CO_max_upper / 6.;
-
-      s = s + "CO<sub>2</sub> concentrations for the past 24 hours</p>"
-          + graph_header + "<text x=\"";
-      toGraphCoords(0.00, -0.1, graphX, graphY);
-      s += graphX + y_insert + graphY + "\">24</text>\n<text x=\"";
-      toGraphCoords(0.25, -0.1, graphX, graphY);
-      s += graphX + y_insert + graphY + "\">18</text>\n<text x=\"";
-      toGraphCoords(0.50, -0.1, graphX, graphY);
-      s += graphX + y_insert + graphY + "\">12</text>\n<text x=\"";
-      toGraphCoords(0.75, -0.1, graphX, graphY);
-      s += graphX + y_insert + graphY + "\">6</text>\n<text x=\"";
-      toGraphCoords(1.00, -0.1, graphX, graphY);
-      s += graphX + y_insert + graphY + "\">Now</text>\n";
-
-      s += "</g><g class=\"y-labels\">";
-      
-      for (int y = 0; y < 7; y++) {
-        toGraphCoords(-0.05, float(y) / 6.0, graphX, graphY);
-        s += String("<text s=\"") + graphX + String("\" y=\"") + graphY + String("\">")
-             + uint16_t(CO_tick_increment * y)
-             + String("</text>\n");
-      }
-      
-      // Draw in a line at 400ppm
-      s = s + "</g>\n<polyline fill=\"none\" stroke=\"#000088\" stroke-width=\"2\" points=\"\n";
-      toGraphCoords(0, 400.0 / CO_max_upper, graphX, graphY);
-      s = s + graphX + "," + graphY + "\n";
-      toGraphCoords(1, 400.0 / CO_max_upper, graphX, graphY);
-      s = s + graphX + "," + graphY + "\n";
-      
-      s = s + "\"></polyline><polyline fill=\"none\" stroke=\"#00ee00\" stroke-width=\"2\" points=\"\n";
-
-      if (co2_summaries.getCount() > 0) {
-        // This needs to be bounded to 24 hours as well
-        offset_max = min(uint32_t(co2_summaries.getCount()), readings_in_day);
-        float x_inc = 1.0 / float(readings_in_day);
-        for (offset = 1; offset <= offset_max; offset++) {
-          CO2_reading_sum summary;
-          co2_summaries.peekIdx(&summary, co2_summaries.getCount() - offset);
-          //int16_t x, y;
-          toGraphCoords(1.0 - float(offset) * x_inc,
-                        float(summary.ppm_mean) / CO_max_upper, graphX, graphY);
-          // y = (1.0 - float(reading.ppm) / CO_max_upper)* float(graph_h-50);
-          // x = 50 + (1.0 - float(offset)*x_inc) * float(graph_w-50);
-          s = s + graphX + "," + graphY + "\n";
-        }
-      
-        s = s + "\"></polyline><polyline fill=\"none\" stroke=\"#cccccc\" stroke-width=\"1\" points=\"\n";
-      
-        for (offset = 1; offset <= offset_max; offset++) {
-          CO2_reading_sum summary;
-          co2_summaries.peekIdx(&summary, co2_summaries.getCount() - offset);
-          //int16_t x, y;
-          toGraphCoords(1.0 - float(offset) * x_inc,
-                        float(summary.ppm_min) / CO_max_upper, graphX, graphY);
-          // y = (1.0 - float(reading.ppm) / CO_max_upper)* float(graph_h-50);
-          // x = 50 + (1.0 - float(offset)*x_inc) * float(graph_w-50);
-          s = s + graphX + "," + graphY + "\n";
-        }
-      
-        s = s + "\"></polyline><polyline fill=\"none\" stroke=\"#cccccc\" stroke-width=\"1\" points=\"\n";
-      
-        for (offset = 1; offset <= offset_max; offset++) {
-          CO2_reading_sum summary;
-          co2_summaries.peekIdx(&summary, co2_summaries.getCount() - offset);
-          //int16_t x, y;
-          toGraphCoords(1.0 - float(offset) * x_inc,
-                        float(summary.ppm_max) / CO_max_upper, graphX, graphY);
-          // y = (1.0 - float(reading.ppm) / CO_max_upper)* float(graph_h-50);
-          // x = 50 + (1.0 - float(offset)*x_inc) * float(graph_w-50);
-          s = s + graphX + "," + graphY + "\n";
-        }
-      }
-      s = s + graph_footer;
-      webServer.send(200, "text/html", makeStyledPage("CO2 graph - past 24 hours", graph_data_css, s));
-  });
+    webServer.on("/hello", cb_hello );
+    webServer.on("/dataraw", cb_dataraw);
+    webServer.on("/data", cb_data );
+    webServer.on("/dataraw.csv", cb_dataraw_csv);
+    webServer.on("/data.csv", cb_data_csv );
+    webServer.on("/", cb_home );
+    webServer.on("/graph", cb_graph );
 }
 webServer.begin();  // Start web service.  开启web服务
 MDNS.begin("co2monitor");
@@ -607,31 +384,7 @@ void setupMode() {
   Serial.printf("\nStarting Access Point at \"%s\"\n\n", apSSID);
 }
 
-String makePage(String title, String contents) {
-  String s = "<!DOCTYPE html><html><head>";
-  s += "<meta name=\"viewport\" "
-       "content=\"width=device-width,user-scalable=0\">";
-  s += "<title>";
-  s += title;
-  s += "</title></head><body>";
-  s += contents;
-  s += "</body></html>";
-  return s;
-}
 
-String makeStyledPage(String title, String css, String contents) {
-  String s = "<!DOCTYPE html><html><head>";
-  s += "<meta name=\"viewport\" "
-       "content=\"width=device-width,user-scalable=0\">";
-  s += "<title>";
-  s += title;
-  s += "</title><style>";
-  s += css;
-  s += "</style></head><body>";
-  s += contents;
-  s += "</body></html>";
-  return s;
-}
 String urlDecode(String input) {
   String s = input;
   s.replace("%20", " ");
