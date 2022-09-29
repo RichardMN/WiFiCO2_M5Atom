@@ -38,6 +38,7 @@ extern String makeStyledPage(String title, String css, String contents);
 
 extern void cb_home(void);
 extern void cb_graph(void);
+extern void cb_graph_flotr(void);
 extern void cb_settings(void);
 extern void cb_data(void);
 extern void cb_dataraw(void);

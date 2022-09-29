@@ -11,7 +11,7 @@ extern const uint32_t readings_in_day;
 const char* current_data_css = "p,h1{font-family:sans-serif;margin:10px;padding:10px;}"
                                "h1{color:white;background:blue;}"
                                ".reading{color:blue;font-weight:bold;font-size:120px;text-align:center;}\n";
-
+const char* data_css = "p,h1,td{font-family:sans-serif;}";
 const char* graph_header = "<p></p><div class=\"cograph\"><svg version=\"1.2\" xmlns=\
 \"http://www.w3.org/2000/svg\" xmlns:xlink\"http://www.w3.org/1999/xlink\" class=\
 \"cograph\" width=\"400px\" height=\"400px\" overflow=\"visible\">\
@@ -29,6 +29,9 @@ const char* graph_data_css = "p,h1{font-family:sans-serif;margin:10px;padding:10
                               "h1{color:white;background:blue;}"
                               "svg.cograph{overflow-x:visible;overflow-y:visible;margin:10px;}.cograph{margin:20px;padding:20px;}"
     ".label-title,.y-labels,.x-labels{font-family:sans-serif;text-anchor:middle;}.y-labels{text-anchor:end;}\n";
+
+const char* page_footer = "<p><a href=\"/\">Home</a> <a href=\"graph\">Graph</a> <a href=\"data\">Data</a> <a href=\"dataraw\">Raw Data</a>"
+" <a href=\"data.csv\">Data (CSV)</a> <a href=\"dataraw.csv\">Raw Data (CSV)</a> <a href=\"reset\">Reset WiFi</a></p>\n";
 
 // Graph configuration constants
 const uint16_t graph_w = 400;
@@ -106,8 +109,39 @@ void cb_home(void) {
     CO_average /= 10;
     s = s + CO_average + " ppm</p><p>Last 5 minutes</p>\n";
   }
+  s += page_footer;
   webServer.send(200, "text/html", makeStyledPage("Current CO2", current_data_css, s));
 };
+
+void cb_graph_flotr(void) {
+  CO2_reading_sum summary;
+  String s =
+  "<h1>Current CO<sub>2</sub></h1>\n<div id='chart' style=\"width:600px;height:300px;\"></div>\n"
+  "<!--[if lt IE 9]><script src=\"js/excanvas.min.js\"></script><![endif]-->\n"
+  "<script src=\"https://cdn.jsdelivr.net/npm/flotr2@0.1.0/flotr2.min.js\"></script>"
+  s = s+ "\n<script>\nvar ppm_mean = [[\n";
+    if (co2_summaries.getCount()>1){
+    co2_summaries.peekIdx(&summary, 0);
+    s = s + "["
+        + dateTime(summary.time, RFC3339) + ","
+        + summary.ppm_mean + "]\n";
+    for (uint16_t i = 1; i < co2_summaries.getCount(); i++) {
+      co2_summaries.peekIdx(&summary, i);
+      s = s + ",\n["
+          + dateTime(summary.time, RFC3339) + ","
+          + summary.ppm_mean + "]\n";
+    }
+  };
+  s = s + "]];\n</script>\n";
+  s = s +
+  "<script>"
+  "window.onload = function () {"
+"  Flotr.draw(\n    document.getElementById(\"chart\"),\n      [{data:ppm_mean, lines: {show: true}}]);\n"
+"  };\n"
+"</script>";
+  s = s + page_footer;
+  webServer.send(200, "text/html", makeStyledPage("Graph (flotr)", data_css, s));
+}
 
 void cb_data_csv(void) {
   String s =
@@ -152,7 +186,8 @@ void cb_data(void) {
         + summary.ppm_max + "</td></tr>\n";
   }
   s = s + "</table>\n";
-  webServer.send(200, "text/html", makePage("CO2 data", s));
+  s += page_footer;
+  webServer.send(200, "text/html", makeStyledPage("CO2 data", data_css, s));
 };
 
 void cb_dataraw(void) {
@@ -167,7 +202,8 @@ void cb_dataraw(void) {
         + reading.ppm + "</td></tr>\n";
   }
   s = s + "</table>\n";
-  webServer.send(200, "text/html", makePage("CO2 data", s));
+  s += page_footer;
+  webServer.send(200, "text/html", makeStyledPage("CO2 data", data_css, s));
 };
 
 void cb_graph(void) {
@@ -258,6 +294,7 @@ void cb_graph(void) {
     }
   }
   s = s + graph_footer;
+  s += page_footer;
   webServer.send(200, "text/html", makeStyledPage("CO2 graph - past 24 hours", graph_data_css, s));
 };
 

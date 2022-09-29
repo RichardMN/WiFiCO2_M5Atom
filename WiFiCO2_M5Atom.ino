@@ -50,10 +50,9 @@ FastLED_NeoMatrix *matrix = new FastLED_NeoMatrix(matrixleds, mw, mh,
 const uint16_t colors[] = {
   matrix->Color(255, 0, 0), matrix->Color(0, 255, 0), matrix->Color(0, 0, 255) };
 
+String displayString;
 int16_t display_x = 0;
 unsigned long display_tick = 0UL;
-
-
 
 const uint32_t maxCO2_queue_len = 240;
 const uint32_t maxCO2_sum_len = 12 * 48; // 12 summary points per hour for 48 hours
@@ -167,37 +166,29 @@ void loop() {
     if (mhz19b.isWarmingUp()) {
       matrix->fillScreen(matrix->Color(0,0,0));
       display_x--;
-      if ( display_x < -40 ) {
+      if ( display_x < -30 ) {
         display_x = matrix->width();
+        Serial.println(F("Warming up..."));
       }
       matrix->setCursor(display_x, mh);
-      matrix->print("Warming up");
+      matrix->print("Warm up");
       matrix->show();
 
-      Serial.println(F("Warming up..."));
-      delay(1000);
+      delay(500);
       lastRead = millis();
     } else {
-      //M5.dis.fillpix(0x000000);
-      // if (millis() - display_tick > 100) {
-      //   display_x--;
-      //   if ( display_x < -50 ) {
-      //     display_x = matrix->width();
-      //   }
-      //   matrix->setCursor(display_x, mh);
-      //   matrix->show();
-      //   display_tick = millis();
-      // }
       if ((millis() - lastRead > 30000)
           && mhz19b.isReady()) {
         int16_t result;
         // Read CO2 concentration from sensor
         result = mhz19b.readCO2();
         if ( co2_readings.getCount() < 10 ) {
-          matrix->fillScreen(0);
-          matrix->setCursor(display_x, mh);
-          matrix->print(String(result) + " ppm");
-          matrix->show();
+          display_x = mw;
+          displayString = String(result);
+          // matrix->fillScreen(matrix->Color(0,0,0));
+          // matrix->setCursor(display_x, mh);
+          // matrix->print(String(result));
+          // matrix->show();
         }
         // Print result
         if (result < 0) {
@@ -205,11 +196,16 @@ void loop() {
           printErrorCode(result);
         } else {
           // Print CO2 concentration in ppm
-          Serial.print("RFC822:      " + dateTime(RFC822) + " ");
+          matrix->fillScreen(matrix->Color(0,64,0));
+          Serial.print("display_x" + display_x + String( "RFC822:      ") + dateTime(RFC822) + " ");
           Serial.print(result);
           Serial.println(F(" ppm"));
           lastRead = millis();
           CO2_reading latest = { now(), result };
+          if ( co2_readings.getCount() < 10 ) {
+            display_x = mw; 
+            displayString = String(result);
+          }
           co2_readings.push(&latest);
           if ( co2_readings.getCount() % 10 == 0 ) {
             uint16_t offset_max, index;
@@ -229,24 +225,28 @@ void loop() {
             summary.ppm_mean /= 10;
             summary.time = reading.time;
             co2_summaries.push(&summary);
-            matrix->setCursor(display_x, mh);
-            matrix->print(String(summary.ppm_mean) + " ppm");
-            matrix->show();
+            display_x = mw;
+            // matrix->fillScreen(matrix->Color(0,0,0));
+            // matrix->setCursor(display_x, mh);
+            // matrix->print(String(summary.ppm_mean));
+            displayString = String(summary.ppm_mean);
+            // matrix->show();
           }
         }
       }
+      if (millis() - display_tick > 100) {
+        display_x--;
+        if ( display_x < -20 ) {
+          display_x = matrix->width();
+        }
+        matrix->fillScreen(matrix->Color(0,0,128));
+        matrix->print(displayString);
+        //matrix->setCursor(display_x, mh);
+        matrix->show();
+        display_tick = millis();
+      }
     }
   }
-  // if (millis() - display_tick > 100) {
-  //   display_x--;
-  //   if ( display_x < -50 ) {
-  //     display_x = matrix->width();
-  //   }
-  //   matrix->fillScreen(0);
-  //   matrix->setCursor(display_x, mh);
-  //   matrix->show();
-  //   display_tick = millis();
-  // }
   webServer
     .handleClient();  // Check for devices sending requests to the M5ATOM
                       // web server over the network.
@@ -354,6 +354,7 @@ void startWebServer() {  // Open the web service.  打开Web服务
     webServer.on("/data.csv", cb_data_csv );
     webServer.on("/", cb_home );
     webServer.on("/graph", cb_graph );
+    webServer.on("/graph_flotr", cb_graph_flotr );
 }
 webServer.begin();  // Start web service.  开启web服务
 MDNS.begin("co2monitor");
