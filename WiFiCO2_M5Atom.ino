@@ -53,6 +53,7 @@ const uint16_t colors[] = {
 String displayString;
 int16_t display_x = 0;
 unsigned long display_tick = 0UL;
+int16_t latest_ppm=400; 
 
 const uint32_t maxCO2_queue_len = 240;
 const uint32_t maxCO2_sum_len = 12 * 48; // 12 summary points per hour for 48 hours
@@ -185,10 +186,7 @@ void loop() {
         if ( co2_readings.getCount() < 10 ) {
           display_x = mw;
           displayString = String(result);
-          // matrix->fillScreen(matrix->Color(0,0,0));
-          // matrix->setCursor(display_x, mh);
-          // matrix->print(String(result));
-          // matrix->show();
+          matrix->fillScreen(matrix->Color(0,128,0));
         }
         // Print result
         if (result < 0) {
@@ -197,14 +195,15 @@ void loop() {
         } else {
           // Print CO2 concentration in ppm
           matrix->fillScreen(matrix->Color(0,64,0));
-          Serial.print("display_x" + display_x + String( "RFC822:      ") + dateTime(RFC822) + " ");
+          Serial.print("display_x " + String(display_x) + String( " RFC822:      ") + dateTime(RFC822) + " ");
           Serial.print(result);
           Serial.println(F(" ppm"));
           lastRead = millis();
           CO2_reading latest = { now(), result };
           if ( co2_readings.getCount() < 10 ) {
-            display_x = mw; 
-            displayString = String(result);
+            //display_x = mw; 
+            //displayString = String(result);
+            latest_ppm = result;            
           }
           co2_readings.push(&latest);
           if ( co2_readings.getCount() % 10 == 0 ) {
@@ -229,19 +228,20 @@ void loop() {
             // matrix->fillScreen(matrix->Color(0,0,0));
             // matrix->setCursor(display_x, mh);
             // matrix->print(String(summary.ppm_mean));
-            displayString = String(summary.ppm_mean);
+            //displayString = String(summary.ppm_mean);
+            latest_ppm = summary.ppm_mean;
             // matrix->show();
           }
         }
       }
-      if (millis() - display_tick > 100) {
+      if (millis() - display_tick > 500) {
         display_x--;
         if ( display_x < -20 ) {
           display_x = matrix->width();
         }
         matrix->fillScreen(matrix->Color(0,0,128));
-        matrix->print(displayString);
-        //matrix->setCursor(display_x, mh);
+        matrix->print(String(latest_ppm));
+        matrix->setCursor(display_x, mh);
         matrix->show();
         display_tick = millis();
       }
@@ -262,8 +262,8 @@ restoreConfig() { /* Check whether there is wifi configuration information
   Serial.printf(
     "\n\nWIFI-SSID: %s\n",
     wifi_ssid);  // Screen print format string.  屏幕打印格式化字符串
-  Serial.printf("WIFI-PASSWD:");
-  Serial.println(wifi_password);
+  // Serial.printf("WIFI-PASSWD:");
+  // Serial.println(wifi_password);
   WiFi.begin(wifi_ssid.c_str(), wifi_password.c_str());
 
   if (wifi_ssid.length() > 0) {
@@ -355,6 +355,7 @@ void startWebServer() {  // Open the web service.  打开Web服务
     webServer.on("/", cb_home );
     webServer.on("/graph", cb_graph );
     webServer.on("/graph_flotr", cb_graph_flotr );
+    webServer.on("/graph_raw_flotr", cb_graph_raw_flotr );
 }
 webServer.begin();  // Start web service.  开启web服务
 MDNS.begin("co2monitor");

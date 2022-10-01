@@ -33,6 +33,23 @@ const char* graph_data_css = "p,h1{font-family:sans-serif;margin:10px;padding:10
 const char* page_footer = "<p><a href=\"/\">Home</a> <a href=\"graph\">Graph</a> <a href=\"data\">Data</a> <a href=\"dataraw\">Raw Data</a>"
 " <a href=\"data.csv\">Data (CSV)</a> <a href=\"dataraw.csv\">Raw Data (CSV)</a> <a href=\"reset\">Reset WiFi</a></p>\n";
 
+const char* flotr2_header = "<div id='chart' style=\"width:300px;height:300px;\"></div>\n"
+  "<!--[if lt IE 9]><script src=\"js/excanvas.min.js\"></script><![endif]-->\n"
+  "<script src=\"https://cdn.jsdelivr.net/npm/flotr2@0.1.0/flotr2.min.js\"></script>";
+
+const char* flotr2_footer_script = "window.onload = function () {"
+"Flotr.draw(\n"
+"  document.getElementById(\"chart\"),\n"
+"    ppm_mean,\n"
+"    {\n"
+"     lines: {show: true},\n"
+"     yaxis: {min:400, max:1200},\n"
+"     xaxis: {tickFormatter: function(x) {return Math.floor((Date.now()/1000-x)/60);} }\n"
+"    }\n"
+"  );\n"
+"};\n"
+"</script>";
+
 // Graph configuration constants
 const uint16_t graph_w = 400;
 const uint16_t graph_h = 400;
@@ -116,31 +133,49 @@ void cb_home(void) {
 void cb_graph_flotr(void) {
   CO2_reading_sum summary;
   String s =
-  "<h1>Current CO<sub>2</sub></h1>\n<div id='chart' style=\"width:600px;height:300px;\"></div>\n"
-  "<!--[if lt IE 9]><script src=\"js/excanvas.min.js\"></script><![endif]-->\n"
-  "<script src=\"https://cdn.jsdelivr.net/npm/flotr2@0.1.0/flotr2.min.js\"></script>"
-  s = s+ "\n<script>\nvar ppm_mean = [[\n";
-    if (co2_summaries.getCount()>1){
+  "<h1>Current CO<sub>2</sub></h1>\n";
+  s = s + flotr2_header;
+  s = s + "\n<script>\nvar ppm_mean = [[\n";
+  if (co2_summaries.getCount()>1){
     co2_summaries.peekIdx(&summary, 0);
     s = s + "["
-        + dateTime(summary.time, RFC3339) + ","
+        + summary.time + ","        
         + summary.ppm_mean + "]\n";
     for (uint16_t i = 1; i < co2_summaries.getCount(); i++) {
       co2_summaries.peekIdx(&summary, i);
       s = s + ",\n["
-          + dateTime(summary.time, RFC3339) + ","
+          + summary.time + ","
           + summary.ppm_mean + "]\n";
     }
   };
-  s = s + "]];\n</script>\n";
-  s = s +
-  "<script>"
-  "window.onload = function () {"
-"  Flotr.draw(\n    document.getElementById(\"chart\"),\n      [{data:ppm_mean, lines: {show: true}}]);\n"
-"  };\n"
-"</script>";
+  s = s + "]];\n";
+  s = s + flotr2_footer_script;
   s = s + page_footer;
   webServer.send(200, "text/html", makeStyledPage("Graph (flotr)", data_css, s));
+}
+
+void cb_graph_raw_flotr(void) {
+  CO2_reading reading;
+  String s =
+  "<h1>Current CO<sub>2</sub></h1>\n";
+  s = s + flotr2_header;
+  s = s + "\n<script>\nvar ppm_mean = [[\n";
+    if (co2_readings.getCount()>1){
+    co2_readings.peekIdx(&reading, 0);
+    s = s + "["
+        + reading.time + ","        
+        + reading.ppm + "]";
+    for (uint16_t i = 1; i < co2_readings.getCount(); i++) {
+      co2_readings.peekIdx(&reading, i);
+      s = s + ",\n["
+          + reading.time + ","
+          + reading.ppm + "]";
+    }
+  };
+  s = s + "\n]];\n";
+  s = s + flotr2_footer_script;
+  s = s + page_footer;
+  webServer.send(200, "text/html", makeStyledPage("Graph raw (flotr)", data_css, s));
 }
 
 void cb_data_csv(void) {
