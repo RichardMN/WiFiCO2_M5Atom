@@ -4,7 +4,7 @@
 
 This is intended to allow you to connect an [MH-Z19B CO2 sensor](https://www.winsen-sensor.com/sensors/co2-sensor/mh-z19b.html) to an [M5 atom matrix](https://docs.m5stack.com/en/core/atom_matrix) to get a compact, simple network-enabled CO2 monitor.
 
- ![Overview photo of M5 Atom wired to MH-Z19B CO2 sensor](M5 Atom and MH-Z19b overview photo.jpeg)
+ ![Overview photo of M5 Atom wired to MH-Z19B CO2 sensor](/M5%20Atom%20and%20MH-Z19b%20overview%20photo.jpeg)
 
  ## Hardware
 
