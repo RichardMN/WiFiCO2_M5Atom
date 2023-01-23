@@ -4,8 +4,6 @@
 
 This is intended to allow you to connect an [MH-Z19B CO2 sensor](https://www.winsen-sensor.com/sensors/co2-sensor/mh-z19b.html) to an [M5 atom matrix](https://docs.m5stack.com/en/core/atom_matrix) to get a compact, simple network-enabled CO2 monitor.
 
-
-
  ![Overview photo of M5 Atom wired to MH-Z19B CO2 sensor](M5 Atom and MH-Z19b overview photo.jpeg)
 
  ## Hardware
@@ -43,7 +41,7 @@ Once the software is loaded onto the M5, you can then unplug the device and powe
 
 The Arduino IDE should prompt you to help install these libraries, or others which are also required.
 
- The code is largely a mix of the [M5Atom example code](https://github.com/m5stack/M5Atom) and the [ErriezMHZ19B example code](https://github.com/Erriez/ErriezMHZ19B/tree/master/examples/ErriezMHZ19BGettingStarted)
+ The code is largely a mix of the [M5Atom example code](https://github.com/m5stack/M5Atom) and the [ErriezMHZ19B example code](https://github.com/Erriez/ErriezMHZ19B/tree/master/examples/ErriezMHZ19BGettingStarted). Both of these are released under the MIT license and this license is applied to this work.
 
  ## Operation
 
