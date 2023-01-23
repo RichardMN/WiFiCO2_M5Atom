@@ -146,9 +146,9 @@ void setup() {
       mhzSerial.begin(9600, SWSERIAL_8N1, MHZ19B_TX_PIN, MHZ19B_RX_PIN, false);
       while (!mhz19b.detect()) {
         Serial.println(F("Detecting MH-Z19B sensor..."));
-        mhz19b.setRange5000ppm();
         delay(2000);
       };
+      mhz19b.setRange5000ppm();
       return;  // Exit setup().  退出setup()
     }
   }

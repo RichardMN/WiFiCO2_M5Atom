@@ -30,7 +30,8 @@ const char* graph_data_css = "p,h1{font-family:sans-serif;margin:10px;padding:10
                               "svg.cograph{overflow-x:visible;overflow-y:visible;margin:10px;}.cograph{margin:20px;padding:20px;}"
     ".label-title,.y-labels,.x-labels{font-family:sans-serif;text-anchor:middle;}.y-labels{text-anchor:end;}\n";
 
-const char* page_footer = "<p><a href=\"/\">Home</a> <a href=\"graph\">Graph</a> <a href=\"data\">Data</a> <a href=\"dataraw\">Raw Data</a>"
+const char* page_footer = "<p><a href=\"/\">Home</a> <a href=\"graph\">Graph</a> <a href=\"graph_flotr\">Graph (flotr library)</a>"
+" <a href=\"data\">Data</a> <a href=\"dataraw\">Raw Data</a>"
 " <a href=\"data.csv\">Data (CSV)</a> <a href=\"dataraw.csv\">Raw Data (CSV)</a> <a href=\"reset\">Reset WiFi</a></p>\n";
 
 const char* flotr2_header = "<div id='chart' style=\"width:300px;height:300px;\"></div>\n"
