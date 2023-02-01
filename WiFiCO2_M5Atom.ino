@@ -234,7 +234,7 @@ void loop() {
           }
         }
       }
-      if (millis() - display_tick > 500) {
+      if (millis() - display_tick > 400) {
         display_x--;
         if ( display_x < -20 ) {
           display_x = matrix->width();
@@ -356,6 +356,7 @@ void startWebServer() {  // Open the web service.  打开Web服务
     webServer.on("/graph", cb_graph );
     webServer.on("/graph_flotr", cb_graph_flotr );
     webServer.on("/graph_raw_flotr", cb_graph_raw_flotr );
+    webServer.on("/sample_data", cb_make_sample_data );
 }
 webServer.begin();  // Start web service.  开启web服务
 MDNS.begin("co2monitor");

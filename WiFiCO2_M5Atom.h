@@ -46,3 +46,4 @@ extern void cb_dataraw(void);
 extern void cb_data_csv(void);
 extern void cb_dataraw_csv(void);
 extern void cb_hello(void);
+extern void cb_make_sample_data(void);

@@ -1,3 +1,5 @@
+#include <ctime>
+#include <sys/_stdint.h>
 #include <M5Atom.h>
 #include "WiFiCO2_M5Atom.h"
 #include "WebServer.h"
@@ -32,7 +34,7 @@ const char* graph_data_css = "p,h1{font-family:sans-serif;margin:10px;padding:10
 
 const char* page_footer = "<p><a href=\"/\">Home</a> <a href=\"graph\">Graph</a> <a href=\"graph_flotr\">Graph (flotr library)</a>"
 " <a href=\"data\">Data</a> <a href=\"dataraw\">Raw Data</a>"
-" <a href=\"data.csv\">Data (CSV)</a> <a href=\"dataraw.csv\">Raw Data (CSV)</a> <a href=\"reset\">Reset WiFi</a></p>\n";
+" <a href=\"data.csv\">Data (CSV)</a> <a href=\"dataraw.csv\">Raw Data (CSV)</a> <a href=\"reset\">Reset WiFi</a> <a href=\"sample_data\">Make sample</p>\n";
 
 const char* flotr2_header = "<div id='chart' style=\"width:300px;height:300px;\"></div>\n"
   "<!--[if lt IE 9]><script src=\"js/excanvas.min.js\"></script><![endif]-->\n"
@@ -333,6 +335,47 @@ void cb_graph(void) {
   s += page_footer;
   webServer.send(200, "text/html", makeStyledPage("CO2 graph - past 24 hours", graph_data_css, s));
 };
+
+void cb_make_sample_data(void) {
+    String s =
+    "<h1>Prepared CO<sub>2</sub> data (raw)</h1><p>Prepared CO<sub>2</sub> data</p>\n<table><tr><th>Index</th><th>Time</th><th>CO2 ppm</th></tr>\n";
+    co2_readings.clean();
+  uint16_t lastReading = 420;
+  for (uint16_t i = 0; co2_readings.getRemainingCount()>0; i++) {
+    CO2_reading reading;
+    reading.ppm = min(max(lastReading - 50 + rand() % 100, 420), 1200);
+    reading.time = now() - SECS_PER_MIN * i;
+    co2_readings.push(&reading);
+    //co2_readings.peekIdx(&reading, i);
+    s = s + "<tr><td>"
+        + i + "</td><td>"
+        + dateTime(reading.time) + "</td><td>"
+        + reading.ppm + "</td></tr>\n";
+    lastReading = reading.ppm;
+  }
+  s = s + "</table><p>Prepared Summary CO<sub>2</sub> data</p>\n<table><tr><th>Index</th><th>Time</th><th>Mean CO2 ppm</th><th>Min CO2 ppm</th><th>Max CO2 ppm</th></tr>\n";
+    co2_readings.clean();
+  lastReading = 420;
+  for (uint16_t i = 0; co2_summaries.getRemainingCount()>0; i ++) {
+    CO2_reading_sum summary;
+    summary.ppm_mean = min(max(lastReading - 50 + rand() % 100, 420), 1200);
+    summary.ppm_max = min(1200, summary.ppm_mean + rand() % 40);
+    summary.ppm_min = max(420, summary.ppm_mean - rand() % 40);
+    summary.time = now() - SECS_PER_MIN * i *5UL;
+    co2_summaries.push(&summary);
+    //co2_readings.peekIdx(&reading, i);
+    s = s + "<tr><td>"
+        + i + "</td><td>"
+        + dateTime(summary.time) + "</td><td>"
+                + summary.ppm_mean + "</td><td>"
+                + summary.ppm_min +  "</td><td>"
+                + summary.ppm_max + "</td></tr>\n";
+        lastReading = summary.ppm_mean;
+  }
+  s = s + "</table>\n";
+  s += page_footer;
+  webServer.send(200, "text/html", makeStyledPage("CO2 data", data_css, s));
+}
 
 void cb_hello(void) {
   String s =
