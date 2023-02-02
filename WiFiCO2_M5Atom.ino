@@ -25,7 +25,7 @@
 #define mw 5
 #define mh 5
 #define NUMMATRIX (mw*mh)
-
+#define SCROLL_DELAY_MS 300 // delay in milliseconds to scroll LED display
 
 #if defined(ARDUINO_ARCH_ESP32)
 // #define MHZ19B_TX_PIN        18
@@ -73,6 +73,7 @@ cppQueue co2_summaries(sizeof(CO2_reading_sum),
                       true);
 
 unsigned long lastRead = 0UL;
+uint32_t readingsCount = 0UL;
 
 boolean restoreConfig();
 boolean checkConnection();
@@ -172,10 +173,10 @@ void loop() {
         Serial.println(F("Warming up..."));
       }
       matrix->setCursor(display_x, mh);
-      matrix->print("Warm up");
+      matrix->print("WARM UP");
       matrix->show();
 
-      delay(500);
+      delay(SCROLL_DELAY_MS);
       lastRead = millis();
     } else {
       if ((millis() - lastRead > 30000)
@@ -183,7 +184,8 @@ void loop() {
         int16_t result;
         // Read CO2 concentration from sensor
         result = mhz19b.readCO2();
-        if ( co2_readings.getCount() < 10 ) {
+        readingsCount++;
+        if ( readingsCount < 10 ) {
           display_x = mw;
           displayString = String(result);
           matrix->fillScreen(matrix->Color(0,128,0));
@@ -206,7 +208,7 @@ void loop() {
             latest_ppm = result;            
           }
           co2_readings.push(&latest);
-          if ( co2_readings.getCount() % 10 == 0 ) {
+          if ( readingsCount % 10 == 0 ) {
             uint16_t offset_max, index;
             offset_max = co2_readings.getCount()-1;
             CO2_reading reading;
@@ -215,7 +217,6 @@ void loop() {
             summary.ppm_min = 32000;
             summary.ppm_mean = 0;
             for (index = 0; index < 10; index++) {
-
               co2_readings.peekIdx(&reading, offset_max - index);
               summary.ppm_max = max(reading.ppm, summary.ppm_max);
               summary.ppm_min = min(reading.ppm, summary.ppm_min);
@@ -234,9 +235,9 @@ void loop() {
           }
         }
       }
-      if (millis() - display_tick > 400) {
+      if (millis() - display_tick > SCROLL_DELAY_MS) {
         display_x--;
-        if ( display_x < -20 ) {
+        if ( display_x < -15 ) {
           display_x = matrix->width();
         }
         matrix->fillScreen(matrix->Color(0,0,128));

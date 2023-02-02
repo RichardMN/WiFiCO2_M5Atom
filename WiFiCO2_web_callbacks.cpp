@@ -1,6 +1,7 @@
-#include <ctime>
-#include <sys/_stdint.h>
 #include <M5Atom.h>
+#include <ctime>
+#include <ezTime.h>
+#include <sys/_stdint.h>
 #include "WiFiCO2_M5Atom.h"
 #include "WebServer.h"
 
@@ -18,10 +19,10 @@ const char* graph_header = "<p></p><div class=\"cograph\"><svg version=\"1.2\" x
 \"http://www.w3.org/2000/svg\" xmlns:xlink\"http://www.w3.org/1999/xlink\" class=\
 \"cograph\" width=\"400px\" height=\"400px\" overflow=\"visible\">\
 <g class=\"label-title\">\
-<text x=\"-200\" y=\"10\" transform=\"rotate(-90)\">ppm</text>\
+<text x=\"-200\" y=\"-30\" transform=\"rotate(-90)\">ppm</text>\
 </g>\
 <g class=\"label-title\">\
-<text x=\"50%\" y=\"380\">Time</text>\
+<text x=\"50%\" y=\"380\">Time (hours ago)</text>\
 </g>\
 <g class=\"x-labels\">";
 
@@ -46,8 +47,8 @@ const char* flotr2_footer_script = "window.onload = function () {"
 "    ppm_mean,\n"
 "    {\n"
 "     lines: {show: true},\n"
-"     yaxis: {min:400, max:1200},\n"
-"     xaxis: {tickFormatter: function(x) {return Math.floor((Date.now()/1000-x)/60);} }\n"
+"     yaxis: {min:0, max:1200},\n"
+"     xaxis: {mode: \"time\", timezone: \"local\"}\n"
 "    }\n"
 "  );\n"
 "};\n"
@@ -142,12 +143,12 @@ void cb_graph_flotr(void) {
   if (co2_summaries.getCount()>1){
     co2_summaries.peekIdx(&summary, 0);
     s = s + "["
-        + summary.time + ","        
+        + summary.time*1000 + ","        
         + summary.ppm_mean + "]\n";
     for (uint16_t i = 1; i < co2_summaries.getCount(); i++) {
       co2_summaries.peekIdx(&summary, i);
       s = s + ",\n["
-          + summary.time + ","
+          + summary.time*1000 + ","
           + summary.ppm_mean + "]\n";
     }
   };
@@ -166,12 +167,12 @@ void cb_graph_raw_flotr(void) {
     if (co2_readings.getCount()>1){
     co2_readings.peekIdx(&reading, 0);
     s = s + "["
-        + reading.time + ","        
+        + reading.time*1000 + ","        
         + reading.ppm + "]";
     for (uint16_t i = 1; i < co2_readings.getCount(); i++) {
       co2_readings.peekIdx(&reading, i);
-      s = s + ",\n["
-          + reading.time + ","
+      s = s + ",["
+          + reading.time*1000 + ","
           + reading.ppm + "]";
     }
   };
@@ -210,9 +211,10 @@ void cb_dataraw_csv(void) {
 };
 
 void cb_data(void) {
-  String s =
+  String s;
+  s = String(
     "<h1>CO<sub>2</sub> data (summary)</h1><p>CO<sub>2</sub> data, Mean/Minimum/Maximum of 10 samples for 5 minute intervals</p>\n"
-    "<table><tr><th>Index</th><th>Time</th><th>Mean CO2 ppm</th><th>Min CO2 ppm</th><th>Max CO2 ppm</th></tr>\n";
+    "<table><tr><th>Index</th><th>Time</th><th>Mean CO2 ppm</th><th>Min CO2 ppm</th><th>Max CO2 ppm</th></tr>\n");
   for (uint16_t i = 0; i < co2_summaries.getCount(); i++) {
     CO2_reading_sum summary;
     co2_summaries.peekIdx(&summary, i);
@@ -247,7 +249,7 @@ void cb_dataraw(void) {
 void cb_graph(void) {
   uint16_t CO_max = 0;
   uint32_t offset = 0;
-  String s = "<h1>CO<sub>2</sub> for 24 hours</h1><p>";
+  String s = "<h1>CO<sub>2</sub> for 48 hours</h1><p>";
   uint32_t offset_max;
   int graphX, graphY;
   float CO_max_upper, CO_tick_increment;
@@ -262,13 +264,13 @@ void cb_graph(void) {
   s = s + "CO<sub>2</sub> concentrations for the past 24 hours</p>"
       + graph_header + "<text x=\"";
   toGraphCoords(0.00, -0.1, graphX, graphY);
-  s += graphX + y_insert + graphY + "\">24</text>\n<text x=\"";
+  s += graphX + y_insert + graphY + "\">48</text>\n<text x=\"";
   toGraphCoords(0.25, -0.1, graphX, graphY);
-  s += graphX + y_insert + graphY + "\">18</text>\n<text x=\"";
+  s += graphX + y_insert + graphY + "\">36</text>\n<text x=\"";
   toGraphCoords(0.50, -0.1, graphX, graphY);
-  s += graphX + y_insert + graphY + "\">12</text>\n<text x=\"";
+  s += graphX + y_insert + graphY + "\">24</text>\n<text x=\"";
   toGraphCoords(0.75, -0.1, graphX, graphY);
-  s += graphX + y_insert + graphY + "\">6</text>\n<text x=\"";
+  s += graphX + y_insert + graphY + "\">12</text>\n<text x=\"";
   toGraphCoords(1.00, -0.1, graphX, graphY);
   s += graphX + y_insert + graphY + "\">Now</text>\n";
 
@@ -333,7 +335,7 @@ void cb_graph(void) {
   }
   s = s + graph_footer;
   s += page_footer;
-  webServer.send(200, "text/html", makeStyledPage("CO2 graph - past 24 hours", graph_data_css, s));
+  webServer.send(200, "text/html", makeStyledPage("CO2 graph - past 48 hours", graph_data_css, s));
 };
 
 void cb_make_sample_data(void) {
@@ -341,10 +343,12 @@ void cb_make_sample_data(void) {
     "<h1>Prepared CO<sub>2</sub> data (raw)</h1><p>Prepared CO<sub>2</sub> data</p>\n<table><tr><th>Index</th><th>Time</th><th>CO2 ppm</th></tr>\n";
     co2_readings.clean();
   uint16_t lastReading = 420;
+  time_t makeTime;
+  makeTime = now() - co2_readings.sizeOf()/sizeof(CO2_reading)*30;
   for (uint16_t i = 0; co2_readings.getRemainingCount()>0; i++) {
     CO2_reading reading;
     reading.ppm = min(max(lastReading - 50 + rand() % 100, 420), 1200);
-    reading.time = now() - SECS_PER_MIN * i;
+    reading.time = makeTime + i * 30;
     co2_readings.push(&reading);
     //co2_readings.peekIdx(&reading, i);
     s = s + "<tr><td>"
@@ -356,12 +360,13 @@ void cb_make_sample_data(void) {
   s = s + "</table><p>Prepared Summary CO<sub>2</sub> data</p>\n<table><tr><th>Index</th><th>Time</th><th>Mean CO2 ppm</th><th>Min CO2 ppm</th><th>Max CO2 ppm</th></tr>\n";
     co2_readings.clean();
   lastReading = 420;
+  makeTime = now() - co2_summaries.sizeOf()/sizeof(CO2_reading_sum)*5*60;
   for (uint16_t i = 0; co2_summaries.getRemainingCount()>0; i ++) {
     CO2_reading_sum summary;
     summary.ppm_mean = min(max(lastReading - 50 + rand() % 100, 420), 1200);
     summary.ppm_max = min(1200, summary.ppm_mean + rand() % 40);
     summary.ppm_min = max(420, summary.ppm_mean - rand() % 40);
-    summary.time = now() - SECS_PER_MIN * i *5UL;
+    summary.time = makeTime + i * 5*60;
     co2_summaries.push(&summary);
     //co2_readings.peekIdx(&reading, i);
     s = s + "<tr><td>"
@@ -374,7 +379,7 @@ void cb_make_sample_data(void) {
   }
   s = s + "</table>\n";
   s += page_footer;
-  webServer.send(200, "text/html", makeStyledPage("CO2 data", data_css, s));
+  webServer.send(200, "text/html", makeStyledPage("CO2 sample data generation", data_css, s));
 }
 
 void cb_hello(void) {
